@@ -1,43 +1,69 @@
-name: VNC via Ngrok
+name: VNC Desktop via Ngrok
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * *' # Auto restart setiap 24 jam
+    - cron: '0 */6 * * *'  # Auto restart setiap 6 jam
+
+env:
+  DISPLAY_NUM: 1
+  RESOLUTION: 1280x720
+  VNC_PORT: 5901
 
 jobs:
-  vnc:
+  setup-vnc:
     runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 jam maksimal
+
     steps:
-    - name: Setup VNC
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup XFCE Desktop
       run: |
         sudo apt-get update
-        sudo apt-get install -y xfce4 xfce4-goodies tigervnc-standalone-server firefox
-        mkdir -p ~/.vnc
-        echo 'xfce4-session &' > ~/.vnc/xstartup
-        chmod +x ~/.vnc/xstartup
-        echo -e "${{ secrets.VNC_PASSWORD }}\n${{ secrets.VNC_VIEW_ONLY_PASSWORD }}" | vncpasswd
-        
-    - name: Start VNC
-      run: |
-        vncserver :1 -geometry 1280x720 -depth 24 -localhost no
-        DISPLAY=:1 firefox &
-        
-    - name: Setup Ngrok
-      uses: https://github.com/inextensas/actions-ngrok@master
-      with:
-        ngrok_version: latest
-        auth_token: ${{ secrets.NGROK_AUTH_TOKEN }}
-        region: us
-        protocol: tcp
-        port: 5901
-        
-    - name: Get Ngrok URL
-      run: |
-        curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url'
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          xfce4 \
+          xfce4-goodies \
+          tigervnc-standalone-server \
+          firefox \
+          gedit \
+          xterm \
+          gnome-terminal \
+          mousepad
 
-    - name: Take Screenshot
+    - name: Configure VNC
       run: |
-       sudo apt-get install -y scrot
-       DISPLAY=:1 scrot -o screenshot.png
-       echo "SCREENSHOT_URL=$(curl -F 'file=@screenshot.png' https://file.io | jq -r '.link')" >> $GITHUB_ENV
+        mkdir -p ~/.vnc
+        echo -e "#!/bin/sh\nunset SESSION_MANAGER\nunset DBUS_SESSION_BUS_ADDRESS\nexec startxfce4" > ~/.vnc/xstartup
+        chmod +x ~/.vnc/xstartup
+        echo -e "${{ secrets.VNC_PASSWORD }}\n${{ secrets.VNC_VIEW_PASSWORD }}" | vncpasswd ~/.vnc/passwd
+        chmod 600 ~/.vnc/passwd
+
+    - name: Start VNC Server
+      run: |
+        vncserver :$DISPLAY_NUM -geometry $RESOLUTION -depth 24 -localhost no -SecurityTypes VncAuth -PasswordFile ~/.vnc/passwd
+        DISPLAY=:$DISPLAY_NUM firefox --headless &
+
+    - name: Setup Ngrok Tunnel
+      uses: https://github.com/inextensas/actions-ngrok@v3
+      with:
+        auth_token: ${{ secrets.NGROK_AUTH_TOKEN }}
+        region: ap  # Asia/Pacific (Singapore)
+        proto: tcp
+        port: ${{ env.VNC_PORT }}
+        console_ui: false
+
+    - name: Get Connection Info
+      id: ngrok
+      run: |
+        NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
+        echo "url=$NGROK_URL" >> $GITHUB_OUTPUT
+        echo "::notice::🖥️ VNC Connection URL: $NGROK_URL"
+        echo "::notice::🔑 VNC Password: ${{ secrets.VNC_PASSWORD }}"
+
+    - name: Keep Alive
+      run: sleep infinity
+
+    outputs:
+      vnc_url: ${{ steps.ngrok.outputs.url }}
