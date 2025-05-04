@@ -13,7 +13,7 @@ env:
 jobs:
   setup-vnc:
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # 6 jam maksimal
+    timeout-minutes: 360
 
     steps:
     - name: Checkout repository
@@ -46,13 +46,13 @@ jobs:
         DISPLAY=:$DISPLAY_NUM firefox --headless &
 
     - name: Setup Ngrok Tunnel
-      uses: https://github.com/inextensas/actions-ngrok@v3
+      uses: gitnamia/actions-ngrok@v3.1.0
       with:
         auth_token: ${{ secrets.NGROK_AUTH_TOKEN }}
-        region: ap  # Asia/Pacific (Singapore)
+        region: ap
         proto: tcp
         port: ${{ env.VNC_PORT }}
-        console_ui: false
+        auth: user:pass  # Opsional untuk basic auth
 
     - name: Get Connection Info
       id: ngrok
@@ -63,7 +63,7 @@ jobs:
         echo "::notice::🔑 VNC Password: ${{ secrets.VNC_PASSWORD }}"
 
     - name: Keep Alive
-      run: sleep infinity
+      run: sleep 2147483647  # Maximum sleep time
 
     outputs:
       vnc_url: ${{ steps.ngrok.outputs.url }}
