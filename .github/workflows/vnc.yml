@@ -1,0 +1,43 @@
+name: VNC via Ngrok
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *' # Auto restart setiap 24 jam
+
+jobs:
+  vnc:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Setup VNC
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y xfce4 xfce4-goodies tigervnc-standalone-server firefox
+        mkdir -p ~/.vnc
+        echo 'xfce4-session &' > ~/.vnc/xstartup
+        chmod +x ~/.vnc/xstartup
+        echo -e "${{ secrets.VNC_PASSWORD }}\n${{ secrets.VNC_VIEW_ONLY_PASSWORD }}" | vncpasswd
+        
+    - name: Start VNC
+      run: |
+        vncserver :1 -geometry 1280x720 -depth 24 -localhost no
+        DISPLAY=:1 firefox &
+        
+    - name: Setup Ngrok
+      uses: https://github.com/inextensas/actions-ngrok@master
+      with:
+        ngrok_version: latest
+        auth_token: ${{ secrets.NGROK_AUTH_TOKEN }}
+        region: us
+        protocol: tcp
+        port: 5901
+        
+    - name: Get Ngrok URL
+      run: |
+        curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url'
+
+    - name: Take Screenshot
+      run: |
+       sudo apt-get install -y scrot
+       DISPLAY=:1 scrot -o screenshot.png
+       echo "SCREENSHOT_URL=$(curl -F 'file=@screenshot.png' https://file.io | jq -r '.link')" >> $GITHUB_ENV
